@@ -78,17 +78,12 @@
     { id: "newsletter",label: "Newsletter",     icon: "\u{1F4F0}", color: "#B71C1C", desc: "Weekly Fernwood newsletter" },
   ];
 
-  function getEmbedUrl(url, isNewsletter) {
+  function getEmbedUrl(url) {
     if (!url) return "";
     if (url.toLowerCase().includes(".pdf"))
       return "https://mozilla.github.io/pdf.js/web/viewer.html?file=" + encodeURIComponent(url) + "#zoom=page-width";
-    if (url.includes("docs.google.com")) {
-      /* For newsletters, use /pub so links render as normal HTML <a> tags */
-      if (isNewsletter) {
-        return url.replace(/\/preview.*$/, "/pub").replace(/\/edit.*$/, "/pub");
-      }
+    if (url.includes("docs.google.com"))
       return url.replace(/\/edit.*$/, "/preview").replace(/\/pub.*$/, "/preview");
-    }
     return url;
   }
 
@@ -150,20 +145,28 @@
 
     var url = getUrl();
     var hasUrl = url && url.length > 0;
-    var embedUrl = getEmbedUrl(url, isNewsletter);
+    var embedUrl = getEmbedUrl(url);
+    /* For newsletters, build a direct Google Doc link for "Open in Browser" */
+    var directUrl = url;
 
     return e("div", { style: S.viewerRoot },
       e("div", { style: { ...S.topBar, borderBottomColor: section.color + "33" } },
         e("button", { onClick: onBack, style: S.backBtn },
           e("span", { style: { fontSize: 16 } }, "\u2190"), " Home"),
         isNewsletter
-          ? e("select", {
-              value: nlIdx,
-              onChange: function(ev) { setNlIdx(Number(ev.target.value)); },
-              style: { ...S.nlSelect, color: section.color, borderColor: section.color + "44" },
-            }, config.newsletters.map(function(nl, i) {
-              return e("option", { key: i, value: i }, nl.label || ("Newsletter " + (i + 1)));
-            }))
+          ? e("div", { style: { display: "flex", alignItems: "center", gap: 8, flex: 1, justifyContent: "flex-end", minWidth: 0 } },
+              e("select", {
+                value: nlIdx,
+                onChange: function(ev) { setNlIdx(Number(ev.target.value)); },
+                style: { ...S.nlSelect, color: section.color, borderColor: section.color + "44" },
+              }, config.newsletters.map(function(nl, i) {
+                return e("option", { key: i, value: i }, nl.label || ("Newsletter " + (i + 1)));
+              })),
+              hasUrl && e("a", {
+                href: directUrl.replace(/\/preview.*$/, "/edit").replace(/\/pub.*$/, "/edit"),
+                target: "_blank", rel: "noopener noreferrer",
+                style: S.openBrowserBtn,
+              }, "\u{1F517} Open"))
           : e("div", { style: S.topBarCenter },
               e("span", { style: { fontSize: 16 } }, section.icon),
               e("span", { style: { fontWeight: 700, color: section.color } }, section.label))),
@@ -175,11 +178,7 @@
               e("p", { style: S.centerMsgText }, "No link has been added yet. Check back soon!"),
               e("button", { onClick: onBack, style: { ...S.centerBackBtn, borderColor: section.color, color: section.color } }, "\u2190 Back to Home")))
         : e("div", { style: S.embedArea },
-            isNewsletter
-              ? e("iframe", { key: embedUrl, src: embedUrl, title: section.label, style: S.embedFull,
-                  sandbox: "allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-forms allow-top-navigation-by-user-activation",
-                })
-              : e("iframe", { key: embedUrl, src: embedUrl, title: section.label, style: S.embedFull, allow: "autoplay; fullscreen" })));
+            e("iframe", { key: embedUrl, src: embedUrl, title: section.label, style: S.embedFull, allow: "autoplay; fullscreen" })));
   }
 
   /* ═══════════════════════════════════════════════════════
@@ -507,7 +506,8 @@
     topBar: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px", borderBottom: "2px solid", flexShrink: 0, background: "#fafafa", gap: 8 },
     backBtn: { display: "flex", alignItems: "center", gap: 4, background: "none", border: "1px solid #d1d5db", borderRadius: 8, padding: "6px 14px", fontSize: 14, fontWeight: 600, color: "#374151", cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap", flexShrink: 0 },
     topBarCenter: { display: "flex", alignItems: "center", gap: 6, fontSize: 14, overflow: "hidden", whiteSpace: "nowrap" },
-    nlSelect: { fontFamily: "inherit", fontSize: 14, fontWeight: 700, padding: "6px 12px", borderRadius: 8, border: "1px solid", background: "#fff", cursor: "pointer", maxWidth: 260 },
+    nlSelect: { fontFamily: "inherit", fontSize: 14, fontWeight: 700, padding: "6px 12px", borderRadius: 8, border: "1px solid", background: "#fff", cursor: "pointer", maxWidth: 220, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" },
+    openBrowserBtn: { display: "flex", alignItems: "center", gap: 4, padding: "6px 12px", fontSize: 13, fontWeight: 600, color: "#4b5563", background: "#fff", border: "1px solid #d1d5db", borderRadius: 8, textDecoration: "none", whiteSpace: "nowrap", flexShrink: 0 },
     embedArea: { flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" },
     embedFull: { width: "100%", height: "100%", flex: 1, border: "none" },
     centerMsg: { position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "#fafafa", zIndex: 10, padding: 30, gap: 6, textAlign: "center" },
