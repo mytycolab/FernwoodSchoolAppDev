@@ -170,7 +170,9 @@
               e("p", { style: S.centerMsgText }, "No link has been added yet. Check back soon!"),
               e("button", { onClick: onBack, style: { ...S.centerBackBtn, borderColor: section.color, color: section.color } }, "\u2190 Back to Home")))
         : e("div", { style: S.embedArea },
-            e("iframe", { key: embedUrl, src: embedUrl, title: section.label, style: S.embedFull, allow: "autoplay; fullscreen" })));
+            e("iframe", { key: embedUrl, src: embedUrl, title: section.label, style: S.embedFull, allow: "autoplay; fullscreen",
+              sandbox: "allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-forms",
+            })));
   }
 
   /* ═══════════════════════════════════════════════════════
