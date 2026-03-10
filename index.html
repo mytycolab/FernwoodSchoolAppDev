@@ -78,12 +78,17 @@
     { id: "newsletter",label: "Newsletter",     icon: "\u{1F4F0}", color: "#B71C1C", desc: "Weekly Fernwood newsletter" },
   ];
 
-  function getEmbedUrl(url) {
+  function getEmbedUrl(url, isNewsletter) {
     if (!url) return "";
     if (url.toLowerCase().includes(".pdf"))
       return "https://mozilla.github.io/pdf.js/web/viewer.html?file=" + encodeURIComponent(url) + "#zoom=page-width";
-    if (url.includes("docs.google.com"))
+    if (url.includes("docs.google.com")) {
+      /* For newsletters, use /pub so links render as normal HTML <a> tags */
+      if (isNewsletter) {
+        return url.replace(/\/preview.*$/, "/pub").replace(/\/edit.*$/, "/pub");
+      }
       return url.replace(/\/edit.*$/, "/preview").replace(/\/pub.*$/, "/preview");
+    }
     return url;
   }
 
@@ -145,7 +150,7 @@
 
     var url = getUrl();
     var hasUrl = url && url.length > 0;
-    var embedUrl = getEmbedUrl(url);
+    var embedUrl = getEmbedUrl(url, isNewsletter);
 
     return e("div", { style: S.viewerRoot },
       e("div", { style: { ...S.topBar, borderBottomColor: section.color + "33" } },
@@ -170,9 +175,11 @@
               e("p", { style: S.centerMsgText }, "No link has been added yet. Check back soon!"),
               e("button", { onClick: onBack, style: { ...S.centerBackBtn, borderColor: section.color, color: section.color } }, "\u2190 Back to Home")))
         : e("div", { style: S.embedArea },
-            e("iframe", { key: embedUrl, src: embedUrl, title: section.label, style: S.embedFull, allow: "autoplay; fullscreen",
-              sandbox: "allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-forms",
-            })));
+            isNewsletter
+              ? e("iframe", { key: embedUrl, src: embedUrl, title: section.label, style: S.embedFull,
+                  sandbox: "allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-forms allow-top-navigation-by-user-activation",
+                })
+              : e("iframe", { key: embedUrl, src: embedUrl, title: section.label, style: S.embedFull, allow: "autoplay; fullscreen" })));
   }
 
   /* ═══════════════════════════════════════════════════════
