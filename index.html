@@ -19,6 +19,21 @@
     @keyframes fwspin { to { transform: rotate(360deg); } }
     @keyframes fwfadein { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
   </style>
+  <script>
+    /* Block browser's native pinch-zoom on the outer page.
+       This lets the PDF.js viewer inside the iframe handle zoom exclusively.
+       We intercept multi-touch gestures and the Ctrl+wheel zoom shortcut. */
+    document.addEventListener("touchmove", function(ev) {
+      if (ev.touches && ev.touches.length > 1) { ev.preventDefault(); }
+    }, { passive: false });
+    document.addEventListener("gesturestart", function(ev) { ev.preventDefault(); }, { passive: false });
+    document.addEventListener("gesturechange", function(ev) { ev.preventDefault(); }, { passive: false });
+    document.addEventListener("gestureend", function(ev) { ev.preventDefault(); }, { passive: false });
+    /* Block Ctrl+wheel zoom on desktop (optional, keeps page at 100%) */
+    document.addEventListener("wheel", function(ev) {
+      if (ev.ctrlKey) { ev.preventDefault(); }
+    }, { passive: false });
+  </script>
 </head>
 <body>
   <div id="root"></div>
