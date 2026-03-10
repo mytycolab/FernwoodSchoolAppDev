@@ -172,8 +172,10 @@
     var calUrlState = useState(""), calUrl = calUrlState[0], setCalUrl = calUrlState[1];
 
     /* Newsletter fields */
-    var nlLabelState = useState(""), nlLabel = nlLabelState[0], setNlLabel = nlLabelState[1];
     var nlUrlState = useState(""), nlUrl = nlUrlState[0], setNlUrl = nlUrlState[1];
+    var nlFetchState = useState("idle"); /* idle | fetching | fetched | error */
+    var nlFetch = nlFetchState[0], setNlFetch = nlFetchState[1];
+    var nlTitleState = useState(""), nlTitle = nlTitleState[0], setNlTitle = nlTitleState[1];
 
     function handleLogin() {
       if (pw === DEFAULTS.adminPassword) { setAuthed(true); setErr(false); }
@@ -181,6 +183,53 @@
     }
 
     function showMsg(text) { setMsg(text); setTimeout(function() { setMsg(""); }, 3000); }
+
+    /* Extract Google Doc ID from various URL formats */
+    function extractDocId(url) {
+      var match = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+      return match ? match[1] : null;
+    }
+
+    /* Fetch the document title from Google */
+    function fetchDocTitle(url) {
+      var docId = extractDocId(url);
+      if (!docId) { setNlFetch("error"); setNlTitle(""); return; }
+      setNlFetch("fetching");
+      setNlTitle("");
+      /* Use Google's oembed-like endpoint to get the title */
+      var fetchUrl = "https://docs.google.com/document/d/" + docId + "/export?format=txt";
+      /* Alternatively, fetch the sharing page which has the title in HTML */
+      var pageUrl = "https://docs.google.com/document/d/" + docId + "/preview";
+      /* Use a CORS proxy to fetch the page and extract the title */
+      fetch("https://corsproxy.io/?" + encodeURIComponent("https://docs.google.com/document/d/" + docId)).then(function(res) {
+        return res.text();
+      }).then(function(html) {
+        var titleMatch = html.match(/<title>([^<]+)<\/title>/i);
+        if (titleMatch && titleMatch[1]) {
+          var title = titleMatch[1].replace(/ - Google Docs$/, "").replace(/ - Google Drive$/, "").trim();
+          setNlTitle(title);
+          setNlFetch("fetched");
+        } else {
+          setNlTitle("");
+          setNlFetch("error");
+        }
+      }).catch(function() {
+        setNlTitle("");
+        setNlFetch("error");
+      });
+    }
+
+    /* When URL field changes, auto-fetch title */
+    function handleNlUrlChange(val) {
+      setNlUrl(val);
+      setNlFetch("idle");
+      setNlTitle("");
+    }
+
+    function handleFetchTitle() {
+      if (!nlUrl.trim()) return;
+      fetchDocTitle(nlUrl.trim());
+    }
 
     /* Save new calendar URL to Firebase */
     function saveCalendar() {
@@ -195,20 +244,20 @@
 
     /* Add new newsletter to Firebase (drops oldest if > 3) */
     function addNewsletter() {
-      if (!nlLabel.trim() || !nlUrl.trim()) return;
+      if (!nlUrl.trim() || !nlTitle) return;
       var cleanUrl = nlUrl.trim();
-      /* auto-convert /edit to /preview */
       if (cleanUrl.includes("docs.google.com")) {
         cleanUrl = cleanUrl.replace(/\/edit.*$/, "/preview").replace(/\/pub.*$/, "/preview");
       }
-      var newNl = { label: nlLabel.trim(), url: cleanUrl };
+      var newNl = { label: nlTitle, url: cleanUrl };
       var updated = [newNl].concat(config.newsletters || []).slice(0, 3);
       db.collection("config").doc("main").update({
         newsletters: updated,
       }).then(function() {
         showMsg("\u2705 Newsletter added! Oldest dropped if more than 3.");
-        setNlLabel("");
         setNlUrl("");
+        setNlTitle("");
+        setNlFetch("idle");
       }).catch(function(e) { showMsg("\u274C Error: " + e.message); });
     }
 
@@ -256,18 +305,27 @@
         /* ── SECTION: Add Newsletter ── */
         e("div", { style: S.adminSection },
           e("h3", { style: S.adminSectionTitle }, "\u{1F4F0} Add New Newsletter"),
-          e("p", { style: S.adminHint }, "This will be added as the newest. If there are already 3, the oldest will be removed."),
+          e("p", { style: S.adminHint }, "Paste the Google Doc URL below. The title will be pulled automatically from the document."),
           e("input", {
-            type: "text", value: nlLabel, placeholder: 'Label (e.g. "Newsletter #27 — 3/17/26")',
-            onChange: function(ev) { setNlLabel(ev.target.value); },
-            style: { ...S.adminInput, marginBottom: 8 },
-          }),
-          e("input", {
-            type: "text", value: nlUrl, placeholder: "Google Doc URL",
-            onChange: function(ev) { setNlUrl(ev.target.value); },
+            type: "text", value: nlUrl, placeholder: "Paste Google Doc URL",
+            onChange: function(ev) { handleNlUrlChange(ev.target.value); },
             style: S.adminInput,
           }),
-          e("button", { onClick: addNewsletter, style: S.adminSaveBtn, disabled: !nlLabel.trim() || !nlUrl.trim() }, "Add Newsletter")),
+          e("div", { style: { display: "flex", gap: 8, marginTop: 10 } },
+            e("button", {
+              onClick: handleFetchTitle,
+              style: { ...S.adminFetchBtn, opacity: nlUrl.trim() ? 1 : 0.5 },
+              disabled: !nlUrl.trim() || nlFetch === "fetching",
+            }, nlFetch === "fetching" ? "Fetching title\u2026" : "Fetch Title")),
+          nlFetch === "fetched" && nlTitle && e("div", { style: S.adminTitlePreview },
+            e("p", { style: { margin: 0, fontSize: 12, color: "#718096" } }, "Title found:"),
+            e("p", { style: { margin: "4px 0 0", fontSize: 15, fontWeight: 700, color: "#1a1a1a" } }, nlTitle)),
+          nlFetch === "error" && e("p", { style: { margin: "8px 0 0", fontSize: 13, color: "#ef4444" } },
+            "Could not fetch title. Make sure the document is shared publicly."),
+          nlFetch === "fetched" && nlTitle && e("button", {
+            onClick: addNewsletter,
+            style: S.adminSaveBtn,
+          }, "Add Newsletter")),
 
         /* ── SECTION: Current Newsletters ── */
         e("div", { style: S.adminSection },
@@ -446,6 +504,8 @@
     adminLabel: { display: "block", fontSize: 13, fontWeight: 600, color: "#4a5568", marginBottom: 4 },
     adminUrlBox: { padding: "8px 12px", background: "#fff", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 11, color: "#64748b", wordBreak: "break-all", lineHeight: 1.5 },
     adminSaveBtn: { marginTop: 10, padding: "10px 20px", fontSize: 14, fontWeight: 700, borderRadius: 8, border: "none", background: "#C62828", color: "#fff", cursor: "pointer", fontFamily: "inherit", width: "100%", opacity: 1 },
+    adminFetchBtn: { padding: "10px 20px", fontSize: 14, fontWeight: 700, borderRadius: 8, border: "1px solid #d1d5db", background: "#fff", color: "#374151", cursor: "pointer", fontFamily: "inherit", flex: 1 },
+    adminTitlePreview: { marginTop: 10, padding: "12px 14px", background: "#f0fdf4", borderRadius: 8, border: "1px solid #bbf7d0" },
     adminMsg: { marginBottom: 14, padding: "10px 14px", background: "#f0fdf4", borderRadius: 8, border: "1px solid #bbf7d0", fontSize: 14, color: "#166534", textAlign: "center" },
   };
 
