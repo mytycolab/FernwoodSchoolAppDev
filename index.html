@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>Fernwood Montessori — Student &amp; Family Hub</title>
+  <meta name="description" content="Breakfast menus, lunch menus, district calendar, and weekly newsletter for Fernwood Montessori families." />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏴‍☠️</text></svg>" />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+  <!-- Firebase -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body, #root { margin: 0; height: 100%; overflow: hidden; }
+    body { font-family: 'DM Sans', 'Segoe UI', sans-serif; background: #f5f0f0; color: #2d3748; }
+    @keyframes fwspin { to { transform: rotate(360deg); } }
+    @keyframes fwfadein { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script>
+  /* ═══════════════════════════════════════════════════════
+     FIREBASE CONFIG
+     ═══════════════════════════════════════════════════════ */
+  firebase.initializeApp({
+    apiKey: "AIzaSyBYeg0ZjW-IJDuiTj-qqVzZmfEg71z76rk",
+    authDomain: "fernwood-hub.firebaseapp.com",
+    projectId: "fernwood-hub",
+    storageBucket: "fernwood-hub.firebasestorage.app",
+    messagingSenderId: "98929066224",
+    appId: "1:98929066224:web:3f53e7ae4a9fa4c14f4235",
+  });
+  var db = firebase.firestore();
+
+  /* ═══════════════════════════════════════════════════════
+     DEFAULT CONFIG — used as fallback if Firebase is empty
+     ═══════════════════════════════════════════════════════ */
+  var DEFAULTS = {
+    schoolName: "Fernwood Montessori",
+    schoolPhotoUrl: "https://imagescdn.homes.com/i2/HS2V7HUuGZKlACCPq6EHIbE34BoQhQB5H5wzhVzV3kE/114/fernwood-montessori-school-milwaukee-wi-primaryphoto.jpg?p=1",
+    breakfastMenuUrl: "https://resources.finalsite.net/images/v1772224302/mpsmilwaukeek12wius/bpoefmzs3n7rpwa6joog/MarchELBreakfastMenu-MilwaukeePublicSchools.pdf",
+    lunchMenuUrl: "https://resources.finalsite.net/images/v1772224302/mpsmilwaukeek12wius/xv7gvhde7wwg4iy4uezb/MarchELLunchMenu-MilwaukeePublicSchools.pdf",
+    districtCalendarUrl: "https://resources.finalsite.net/images/v1766515266/mpsmilwaukeek12wius/wue9wcski23lt4gxz6ey/mps-district-calendar-2526v8.pdf",
+    newsletters: [
+      { label: "Newsletter #26 — 3/10/26", url: "https://docs.google.com/document/d/1QlAx1fHovxnU83zJlV424jOlFUFR166o/preview" },
+      { label: "Newsletter #25 — 3/3/26",  url: "https://docs.google.com/document/d/1qDguDhQpLWDjLX6BiZtQILZLhJtsOKGM/preview" },
+      { label: "Newsletter #24 — 2/24/26", url: "https://docs.google.com/document/d/1f82W3ILocZgc9cNU8gkbfZRsqZiYulgl/preview" },
+    ],
+    adminPassword: "PirateFernwood",
+  };
+
+  var e = React.createElement;
+  var useState = React.useState, useEffect = React.useEffect, useCallback = React.useCallback;
+
+  var SECTIONS = [
+    { id: "breakfast", label: "Breakfast Menu", icon: "\u{1F305}", color: "#C62828", desc: "This month's MPS breakfast menu" },
+    { id: "lunch",     label: "Lunch Menu",     icon: "\u{1F34E}", color: "#D32F2F", desc: "This month's MPS lunch menu" },
+    { id: "calendar",  label: "District Calendar", icon: "\u{1F4C5}", color: "#1a1a1a", desc: "MPS district calendar" },
+    { id: "newsletter",label: "Newsletter",     icon: "\u{1F4F0}", color: "#B71C1C", desc: "Weekly Fernwood newsletter" },
+  ];
+
+  function getEmbedUrl(url) {
+    if (!url) return "";
+    if (url.toLowerCase().includes(".pdf"))
+      return "https://mozilla.github.io/pdf.js/web/viewer.html?file=" + encodeURIComponent(url);
+    if (url.includes("docs.google.com"))
+      return url.replace(/\/edit.*$/, "/preview").replace(/\/pub.*$/, "/preview");
+    return url;
+  }
+
+  /* ═══════════════════════════════════════════════════════
+     FIREBASE DATA HOOK — loads live data, falls back to defaults
+     ═══════════════════════════════════════════════════════ */
+  function useFirebaseConfig() {
+    var state = useState({ loaded: false, data: DEFAULTS });
+    var config = state[0], setConfig = state[1];
+
+    useEffect(function() {
+      /* Listen for real-time updates */
+      var unsub = db.collection("config").doc("main").onSnapshot(function(doc) {
+        if (doc.exists) {
+          var d = doc.data();
+          setConfig({ loaded: true, data: {
+            ...DEFAULTS,
+            breakfastMenuUrl: d.breakfastMenuUrl || DEFAULTS.breakfastMenuUrl,
+            lunchMenuUrl: d.lunchMenuUrl || DEFAULTS.lunchMenuUrl,
+            districtCalendarUrl: d.districtCalendarUrl || DEFAULTS.districtCalendarUrl,
+            newsletters: d.newsletters && d.newsletters.length > 0 ? d.newsletters : DEFAULTS.newsletters,
+          }});
+        } else {
+          /* First run: write defaults to Firebase */
+          db.collection("config").doc("main").set({
+            breakfastMenuUrl: DEFAULTS.breakfastMenuUrl,
+            lunchMenuUrl: DEFAULTS.lunchMenuUrl,
+            districtCalendarUrl: DEFAULTS.districtCalendarUrl,
+            newsletters: DEFAULTS.newsletters,
+          });
+          setConfig({ loaded: true, data: DEFAULTS });
+        }
+      }, function(err) {
+        console.error("Firebase error:", err);
+        setConfig({ loaded: true, data: DEFAULTS });
+      });
+      return function() { unsub(); };
+    }, []);
+
+    return config;
+  }
+
+  /* ═══════════════════════════════════════════════════════
+     DOCUMENT VIEWER
+     ═══════════════════════════════════════════════════════ */
+  function DocViewer(_ref) {
+    var section = _ref.section, onBack = _ref.onBack, config = _ref.config;
+    var isNewsletter = section.id === "newsletter";
+    var nlState = useState(0);
+    var nlIdx = nlState[0], setNlIdx = nlState[1];
+
+    function getUrl() {
+      if (section.id === "breakfast") return config.breakfastMenuUrl;
+      if (section.id === "lunch") return config.lunchMenuUrl;
+      if (section.id === "calendar") return config.districtCalendarUrl;
+      if (isNewsletter) return (config.newsletters[nlIdx] && config.newsletters[nlIdx].url) || "";
+      return "";
+    }
+
+    var url = getUrl();
+    var hasUrl = url && url.length > 0;
+    var embedUrl = getEmbedUrl(url);
+
+    return e("div", { style: S.viewerRoot },
+      e("div", { style: { ...S.topBar, borderBottomColor: section.color + "33" } },
+        e("button", { onClick: onBack, style: S.backBtn },
+          e("span", { style: { fontSize: 16 } }, "\u2190"), " Home"),
+        isNewsletter
+          ? e("select", {
+              value: nlIdx,
+              onChange: function(ev) { setNlIdx(Number(ev.target.value)); },
+              style: { ...S.nlSelect, color: section.color, borderColor: section.color + "44" },
+            }, config.newsletters.map(function(nl, i) {
+              return e("option", { key: i, value: i }, nl.label || ("Newsletter " + (i + 1)));
+            }))
+          : e("div", { style: S.topBarCenter },
+              e("span", { style: { fontSize: 16 } }, section.icon),
+              e("span", { style: { fontWeight: 700, color: section.color } }, section.label))),
+      !hasUrl
+        ? e("div", { style: { flex: 1, position: "relative" } },
+            e("div", { style: S.centerMsg },
+              e("p", { style: { margin: 0, fontSize: 48 } }, section.icon),
+              e("h3", { style: { margin: "12px 0 6px", fontSize: 20, color: section.color } }, section.label),
+              e("p", { style: S.centerMsgText }, "No link has been added yet. Check back soon!"),
+              e("button", { onClick: onBack, style: { ...S.centerBackBtn, borderColor: section.color, color: section.color } }, "\u2190 Back to Home")))
+        : e("div", { style: S.embedArea },
+            e("iframe", { key: embedUrl, src: embedUrl, title: section.label, style: S.embedFull, allow: "autoplay; fullscreen" })));
+  }
+
+  /* ═══════════════════════════════════════════════════════
+     ADMIN PORTAL — writes to Firebase
+     ═══════════════════════════════════════════════════════ */
+  function AdminPortal(_ref) {
+    var onClose = _ref.onClose, config = _ref.config;
+    var authState = useState(false), authed = authState[0], setAuthed = authState[1];
+    var pwState = useState(""), pw = pwState[0], setPw = pwState[1];
+    var errState = useState(false), err = errState[0], setErr = errState[1];
+    var msgState = useState(""), msg = msgState[0], setMsg = msgState[1];
+
+    /* Calendar update fields */
+    var calUrlState = useState(""), calUrl = calUrlState[0], setCalUrl = calUrlState[1];
+
+    /* Newsletter fields */
+    var nlLabelState = useState(""), nlLabel = nlLabelState[0], setNlLabel = nlLabelState[1];
+    var nlUrlState = useState(""), nlUrl = nlUrlState[0], setNlUrl = nlUrlState[1];
+
+    function handleLogin() {
+      if (pw === DEFAULTS.adminPassword) { setAuthed(true); setErr(false); }
+      else { setErr(true); }
+    }
+
+    function showMsg(text) { setMsg(text); setTimeout(function() { setMsg(""); }, 3000); }
+
+    /* Save new calendar URL to Firebase */
+    function saveCalendar() {
+      if (!calUrl.trim()) return;
+      db.collection("config").doc("main").update({
+        districtCalendarUrl: calUrl.trim(),
+      }).then(function() {
+        showMsg("\u2705 District calendar updated!");
+        setCalUrl("");
+      }).catch(function(e) { showMsg("\u274C Error: " + e.message); });
+    }
+
+    /* Add new newsletter to Firebase (drops oldest if > 3) */
+    function addNewsletter() {
+      if (!nlLabel.trim() || !nlUrl.trim()) return;
+      var cleanUrl = nlUrl.trim();
+      /* auto-convert /edit to /preview */
+      if (cleanUrl.includes("docs.google.com")) {
+        cleanUrl = cleanUrl.replace(/\/edit.*$/, "/preview").replace(/\/pub.*$/, "/preview");
+      }
+      var newNl = { label: nlLabel.trim(), url: cleanUrl };
+      var updated = [newNl].concat(config.newsletters || []).slice(0, 3);
+      db.collection("config").doc("main").update({
+        newsletters: updated,
+      }).then(function() {
+        showMsg("\u2705 Newsletter added! Oldest dropped if more than 3.");
+        setNlLabel("");
+        setNlUrl("");
+      }).catch(function(e) { showMsg("\u274C Error: " + e.message); });
+    }
+
+    /* ── Login screen ── */
+    if (!authed) {
+      return e("div", { style: S.adminOverlay },
+        e("div", { style: S.adminCard },
+          e("h2", { style: { margin: "0 0 6px", fontSize: 20, color: "#C62828" } }, "\u{1F512} Admin Login"),
+          e("p", { style: { margin: "0 0 16px", fontSize: 14, color: "#718096" } }, "Enter the admin password to update links."),
+          e("input", {
+            type: "password", value: pw, placeholder: "Password",
+            onChange: function(ev) { setPw(ev.target.value); setErr(false); },
+            onKeyDown: function(ev) { if (ev.key === "Enter") handleLogin(); },
+            style: { ...S.adminInput, borderColor: err ? "#ef4444" : "#d1d5db" },
+          }),
+          err && e("p", { style: { margin: "4px 0 0", fontSize: 13, color: "#ef4444" } }, "Incorrect password."),
+          e("div", { style: { display: "flex", gap: 10, marginTop: 16 } },
+            e("button", { onClick: onClose, style: S.adminCancelBtn }, "Cancel"),
+            e("button", { onClick: handleLogin, style: S.adminLoginBtn }, "Login"))));
+    }
+
+    /* ── Authenticated admin panel ── */
+    return e("div", { style: S.adminOverlay },
+      e("div", { style: { ...S.adminCard, maxWidth: 520 } },
+        /* header */
+        e("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 } },
+          e("h2", { style: { margin: 0, fontSize: 20, color: "#C62828" } }, "\u2699\uFE0F Admin Portal"),
+          e("button", { onClick: onClose, style: S.adminCloseBtn }, "\u2715")),
+
+        /* success/error message */
+        msg && e("div", { style: S.adminMsg }, msg),
+
+        /* ── SECTION: Update District Calendar ── */
+        e("div", { style: S.adminSection },
+          e("h3", { style: S.adminSectionTitle }, "\u{1F4C5} Update District Calendar"),
+          e("p", { style: S.adminHint }, "Current: ", e("span", { style: { fontSize: 11, color: "#94a3b8", wordBreak: "break-all" } },
+            config.districtCalendarUrl ? config.districtCalendarUrl.substring(0, 60) + "\u2026" : "(none)")),
+          e("input", {
+            type: "text", value: calUrl, placeholder: "Paste new calendar PDF URL",
+            onChange: function(ev) { setCalUrl(ev.target.value); },
+            style: S.adminInput,
+          }),
+          e("button", { onClick: saveCalendar, style: S.adminSaveBtn, disabled: !calUrl.trim() }, "Update Calendar")),
+
+        /* ── SECTION: Add Newsletter ── */
+        e("div", { style: S.adminSection },
+          e("h3", { style: S.adminSectionTitle }, "\u{1F4F0} Add New Newsletter"),
+          e("p", { style: S.adminHint }, "This will be added as the newest. If there are already 3, the oldest will be removed."),
+          e("input", {
+            type: "text", value: nlLabel, placeholder: 'Label (e.g. "Newsletter #27 — 3/17/26")',
+            onChange: function(ev) { setNlLabel(ev.target.value); },
+            style: { ...S.adminInput, marginBottom: 8 },
+          }),
+          e("input", {
+            type: "text", value: nlUrl, placeholder: "Google Doc URL",
+            onChange: function(ev) { setNlUrl(ev.target.value); },
+            style: S.adminInput,
+          }),
+          e("button", { onClick: addNewsletter, style: S.adminSaveBtn, disabled: !nlLabel.trim() || !nlUrl.trim() }, "Add Newsletter")),
+
+        /* ── SECTION: Current Newsletters ── */
+        e("div", { style: S.adminSection },
+          e("h3", { style: S.adminSectionTitle }, "Current Newsletters"),
+          config.newsletters && config.newsletters.length > 0
+            ? config.newsletters.map(function(nl, i) {
+                return e("div", { key: i, style: { marginBottom: 8 } },
+                  e("p", { style: { margin: 0, fontSize: 13, fontWeight: 700, color: "#374151" } }, (i + 1) + ". " + nl.label),
+                  e("p", { style: { margin: "2px 0 0", fontSize: 11, color: "#94a3b8", wordBreak: "break-all" } }, nl.url || "(no URL)"));
+              })
+            : e("p", { style: { fontSize: 13, color: "#94a3b8" } }, "No newsletters configured.")),
+
+        /* ── SECTION: Current PDF Links (read-only reference) ── */
+        e("div", { style: S.adminSection },
+          e("h3", { style: S.adminSectionTitle }, "Current PDF Links"),
+          e("p", { style: S.adminHint }, "To update breakfast or lunch menu URLs, edit the DEFAULTS section in the index.html file on GitHub."),
+          adminReadonly("Breakfast Menu", config.breakfastMenuUrl),
+          adminReadonly("Lunch Menu", config.lunchMenuUrl),
+          adminReadonly("District Calendar", config.districtCalendarUrl))));
+  }
+
+  function adminReadonly(label, value) {
+    return e("div", { style: { marginBottom: 8 } },
+      e("label", { style: S.adminLabel }, label),
+      e("div", { style: S.adminUrlBox }, value || "(no URL set)"));
+  }
+
+  /* ═══════════════════════════════════════════════════════
+     LANDING PAGE
+     ═══════════════════════════════════════════════════════ */
+  function Landing(_ref) {
+    var onSelect = _ref.onSelect, onAdmin = _ref.onAdmin, config = _ref.config;
+    var mobileState = useState(false);
+    var isMobile = mobileState[0], setMobile = mobileState[1];
+
+    useEffect(function() {
+      function check() { setMobile(window.innerWidth < 600); }
+      check();
+      window.addEventListener("resize", check);
+      return function() { window.removeEventListener("resize", check); };
+    }, []);
+
+    return e("div", { style: S.landingRoot },
+      e("header", { style: S.header },
+        e("div", { style: S.headerContent },
+          e("img", { src: config.schoolPhotoUrl, alt: config.schoolName, style: S.schoolPhoto }),
+          e("div", null,
+            e("h1", { style: S.schoolName }, config.schoolName),
+            e("p", { style: S.subtitle }, "Student & Family Hub")))),
+      e("main", { style: S.landingMain },
+        !isMobile && e("div", { style: S.welcomeSection },
+          e("h2", { style: S.welcomeTitle }, "Welcome!"),
+          e("p", { style: S.welcomeText }, "Select an item below to view it.")),
+        isMobile
+          ? e("div", { style: S.mobileCardList },
+              SECTIONS.map(function(s, i) {
+                return e("button", {
+                  key: s.id, onClick: function() { onSelect(s.id); },
+                  style: { ...S.mobileCard, animationDelay: (i * 0.06) + "s" },
+                },
+                  e("div", { style: { ...S.mobileCardIcon, background: s.color + "14" } },
+                    e("span", { style: { fontSize: 26 } }, s.icon)),
+                  e("div", { style: S.mobileCardText },
+                    e("h3", { style: { ...S.mobileCardTitle, color: s.color } }, s.label),
+                    e("p", { style: S.mobileCardDesc }, s.desc)),
+                  e("span", { style: { ...S.mobileCardArrow, color: s.color } }, "\u203A"));
+              }))
+          : e("div", { style: S.cardGrid },
+              SECTIONS.map(function(s, i) {
+                return e("button", {
+                  key: s.id, onClick: function() { onSelect(s.id); },
+                  style: { ...S.card, animationDelay: (i * 0.07) + "s" },
+                  onMouseEnter: function(ev) {
+                    ev.currentTarget.style.transform = "translateY(-5px)";
+                    ev.currentTarget.style.boxShadow = "0 10px 30px " + s.color + "25";
+                    ev.currentTarget.style.borderColor = s.color;
+                  },
+                  onMouseLeave: function(ev) {
+                    ev.currentTarget.style.transform = "translateY(0)";
+                    ev.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.06)";
+                    ev.currentTarget.style.borderColor = "#e2e8f0";
+                  },
+                },
+                  e("div", { style: { ...S.cardIconWrap, background: s.color + "14" } },
+                    e("span", { style: { fontSize: 32 } }, s.icon)),
+                  e("h3", { style: { ...S.cardTitle, color: s.color } }, s.label),
+                  e("p", { style: S.cardDesc }, s.desc),
+                  e("span", { style: { ...S.cardCta, color: s.color } }, "Open \u2192"));
+              }))),
+      e("footer", { style: S.footer },
+        e("p", { style: S.footerText }, "Content linked from Milwaukee Public Schools district resources."),
+        e("button", { onClick: onAdmin, style: S.adminTrigger }, "\u2699\uFE0F Admin")));
+  }
+
+  /* ═══════════════════════════════════════════════════════
+     APP — loads Firebase config, passes it everywhere
+     ═══════════════════════════════════════════════════════ */
+  function App() {
+    var activeState = useState(null);
+    var active = activeState[0], setActive = activeState[1];
+    var adminState = useState(false);
+    var showAdmin = adminState[0], setShowAdmin = adminState[1];
+    var firebaseConfig = useFirebaseConfig();
+    var config = firebaseConfig.data;
+
+    /* Loading state */
+    if (!firebaseConfig.loaded) {
+      return e("div", { style: { ...S.centerMsg, position: "fixed", inset: 0, background: "#f5f0f0" } },
+        e("div", { style: { ...S.spinner, borderTopColor: "#C62828" } }),
+        e("p", { style: { marginTop: 14, fontSize: 15, color: "#718096" } }, "Loading\u2026"));
+    }
+
+    var section = active ? SECTIONS.find(function(s) { return s.id === active; }) : null;
+
+    if (showAdmin) return e(AdminPortal, { config: config, onClose: function() { setShowAdmin(false); } });
+    if (section) return e(DocViewer, { section: section, config: config, onBack: function() { setActive(null); } });
+    return e(Landing, {
+      config: config,
+      onSelect: function(id) { setActive(id); },
+      onAdmin: function() { setShowAdmin(true); },
+    });
+  }
+
+  /* ═══════════════════════════════════════════════════════
+     STYLES
+     ═══════════════════════════════════════════════════════ */
+  var S = {
+    landingRoot: { height: "100%", display: "flex", flexDirection: "column", overflow: "auto" },
+    header: { background: "linear-gradient(135deg,#1a1a1a 0%,#2d2d2d 40%,#C62828 100%)", color: "#fff", padding: "14px 20px", position: "relative", boxShadow: "0 2px 12px rgba(0,0,0,0.3)", flexShrink: 0 },
+    headerContent: { display: "flex", alignItems: "center", gap: 12, position: "relative", zIndex: 2, maxWidth: 800, margin: "0 auto" },
+    schoolPhoto: { width: 48, height: 48, borderRadius: "50%", objectFit: "cover", border: "2px solid rgba(255,255,255,0.4)", flexShrink: 0 },
+    schoolName: { margin: 0, fontSize: 20, fontWeight: 800, letterSpacing: "-0.02em", textShadow: "0 1px 3px rgba(0,0,0,0.15)" },
+    subtitle: { margin: "1px 0 0", fontSize: 11, fontWeight: 500, opacity: 0.85, letterSpacing: "0.04em", textTransform: "uppercase" },
+    landingMain: { flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "24px 16px" },
+    welcomeSection: { textAlign: "center", marginBottom: 24 },
+    welcomeTitle: { margin: 0, fontSize: 26, fontWeight: 800, color: "#C62828" },
+    welcomeText: { margin: "6px 0 0", fontSize: 15, color: "#718096" },
+    cardGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 16, width: "100%", maxWidth: 720 },
+    card: { background: "#fff", border: "1px solid #e2e8f0", borderRadius: 16, padding: "24px 16px 20px", cursor: "pointer", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 6, transition: "all 0.2s ease", boxShadow: "0 2px 8px rgba(0,0,0,0.06)", fontFamily: "inherit", animation: "fwfadein 0.4s ease both" },
+    cardIconWrap: { width: 56, height: 56, borderRadius: 14, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 2 },
+    cardTitle: { margin: 0, fontSize: 16, fontWeight: 800 },
+    cardDesc: { margin: 0, fontSize: 13, color: "#718096", lineHeight: 1.4 },
+    cardCta: { marginTop: 4, fontSize: 14, fontWeight: 700 },
+    mobileCardList: { display: "flex", flexDirection: "column", gap: 10, width: "100%", maxWidth: 480 },
+    mobileCard: { display: "flex", alignItems: "center", gap: 14, width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 14, padding: "14px 16px", cursor: "pointer", textAlign: "left", fontFamily: "inherit", transition: "background 0.15s ease", boxShadow: "0 1px 4px rgba(0,0,0,0.05)", animation: "fwfadein 0.35s ease both" },
+    mobileCardIcon: { width: 50, height: 50, borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 },
+    mobileCardText: { flex: 1, minWidth: 0 },
+    mobileCardTitle: { margin: 0, fontSize: 16, fontWeight: 800 },
+    mobileCardDesc: { margin: "2px 0 0", fontSize: 12, color: "#94a3b8", lineHeight: 1.3 },
+    mobileCardArrow: { fontSize: 28, fontWeight: 300, flexShrink: 0, lineHeight: 1 },
+    footer: { padding: "10px 16px", textAlign: "center", borderTop: "1px solid #e2e8f0", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: 12 },
+    footerText: { margin: 0, fontSize: 11, color: "#a0aec0" },
+    adminTrigger: { background: "none", border: "1px solid #d1d5db", borderRadius: 6, padding: "3px 10px", fontSize: 11, color: "#94a3b8", cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" },
+    viewerRoot: { height: "100%", display: "flex", flexDirection: "column", background: "#fff" },
+    topBar: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px", borderBottom: "2px solid", flexShrink: 0, background: "#fafafa", gap: 8 },
+    backBtn: { display: "flex", alignItems: "center", gap: 4, background: "none", border: "1px solid #d1d5db", borderRadius: 8, padding: "6px 14px", fontSize: 14, fontWeight: 600, color: "#374151", cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap", flexShrink: 0 },
+    topBarCenter: { display: "flex", alignItems: "center", gap: 6, fontSize: 14, overflow: "hidden", whiteSpace: "nowrap" },
+    nlSelect: { fontFamily: "inherit", fontSize: 14, fontWeight: 700, padding: "6px 12px", borderRadius: 8, border: "1px solid", background: "#fff", cursor: "pointer", maxWidth: 260 },
+    embedArea: { flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" },
+    embedFull: { width: "100%", height: "100%", flex: 1, border: "none" },
+    centerMsg: { position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "#fafafa", zIndex: 10, padding: 30, gap: 6, textAlign: "center" },
+    centerMsgText: { margin: 0, color: "#718096", fontSize: 15, maxWidth: 320, lineHeight: 1.6 },
+    centerBackBtn: { background: "none", border: "2px solid", borderRadius: 10, padding: "10px 22px", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", marginTop: 6 },
+    spinner: { width: 40, height: 40, border: "3px solid #e2e8f0", borderTopWidth: 3, borderRadius: "50%", animation: "fwspin 0.8s linear infinite" },
+
+    /* admin */
+    adminOverlay: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 500, padding: 20 },
+    adminCard: { background: "#fff", borderRadius: 16, padding: "24px 22px", maxWidth: 400, width: "100%", boxShadow: "0 20px 60px rgba(0,0,0,0.2)", maxHeight: "90vh", overflowY: "auto" },
+    adminInput: { width: "100%", padding: "10px 14px", fontSize: 14, borderRadius: 8, border: "1px solid #d1d5db", fontFamily: "inherit", outline: "none" },
+    adminCancelBtn: { flex: 1, padding: "10px", fontSize: 14, fontWeight: 600, borderRadius: 8, border: "1px solid #d1d5db", background: "#fff", color: "#374151", cursor: "pointer", fontFamily: "inherit" },
+    adminLoginBtn: { flex: 1, padding: "10px", fontSize: 14, fontWeight: 600, borderRadius: 8, border: "none", background: "#C62828", color: "#fff", cursor: "pointer", fontFamily: "inherit" },
+    adminCloseBtn: { background: "none", border: "none", fontSize: 20, color: "#94a3b8", cursor: "pointer", padding: "4px 8px" },
+    adminSection: { marginBottom: 20, padding: "16px", background: "#fafafa", borderRadius: 12, border: "1px solid #f1f5f9" },
+    adminSectionTitle: { margin: "0 0 8px", fontSize: 14, fontWeight: 700, color: "#1a1a1a" },
+    adminHint: { margin: "0 0 10px", fontSize: 12, color: "#718096", lineHeight: 1.5 },
+    adminLabel: { display: "block", fontSize: 13, fontWeight: 600, color: "#4a5568", marginBottom: 4 },
+    adminUrlBox: { padding: "8px 12px", background: "#fff", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 11, color: "#64748b", wordBreak: "break-all", lineHeight: 1.5 },
+    adminSaveBtn: { marginTop: 10, padding: "10px 20px", fontSize: 14, fontWeight: 700, borderRadius: 8, border: "none", background: "#C62828", color: "#fff", cursor: "pointer", fontFamily: "inherit", width: "100%", opacity: 1 },
+    adminMsg: { marginBottom: 14, padding: "10px 14px", background: "#f0fdf4", borderRadius: 8, border: "1px solid #bbf7d0", fontSize: 14, color: "#166534", textAlign: "center" },
+  };
+
+  ReactDOM.createRoot(document.getElementById("root")).render(e(App));
+  </script>
+</body>
+</html>
