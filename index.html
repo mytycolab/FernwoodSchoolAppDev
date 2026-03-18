@@ -260,12 +260,14 @@
           var titleMatch = html.match(/<title>([^<]+)<\/title>/i);
           if (titleMatch && titleMatch[1]) {
             var title = titleMatch[1]
-              .replace(/ - Google Docs$/, "")
-              .replace(/ - Google Drive$/, "")
-              .replace(/ - Google Sheets$/, "")
-              .replace(/\.docx$/i, "")
-              .replace(/\.doc$/i, "")
-              .replace(/\.pdf$/i, "")
+              /* Strip everything from .docx/.doc/.pdf onward (catches ".docx - Google Docs" in one pass) */
+              .replace(/\.docx\b.*$/i, "")
+              .replace(/\.doc\b.*$/i, "")
+              .replace(/\.pdf\b.*$/i, "")
+              /* Also strip " - Google Docs" etc if no file extension was present */
+              .replace(/\s*-\s*Google Docs$/i, "")
+              .replace(/\s*-\s*Google Drive$/i, "")
+              .replace(/\s*-\s*Google Sheets$/i, "")
               .trim();
             /* Check if we got a real title (not a security page) */
             if (title && title.length > 0 && title.length < 200
