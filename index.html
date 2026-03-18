@@ -61,9 +61,9 @@
     lunchMenuUrl: "https://resources.finalsite.net/images/v1772224302/mpsmilwaukeek12wius/xv7gvhde7wwg4iy4uezb/MarchELLunchMenu-MilwaukeePublicSchools.pdf",
     districtCalendarUrl: "https://resources.finalsite.net/images/v1766515266/mpsmilwaukeek12wius/wue9wcski23lt4gxz6ey/mps-district-calendar-2526v8.pdf",
     newsletters: [
-      { label: "Newsletter #26 — 3/10/26", url: "https://docs.google.com/document/d/1QlAx1fHovxnU83zJlV424jOlFUFR166o/preview" },
-      { label: "Newsletter #25 — 3/3/26",  url: "https://docs.google.com/document/d/1qDguDhQpLWDjLX6BiZtQILZLhJtsOKGM/preview" },
-      { label: "Newsletter #24 — 2/24/26", url: "https://docs.google.com/document/d/1f82W3ILocZgc9cNU8gkbfZRsqZiYulgl/preview" },
+      { label: "Newsletter #26, 3/10/26", url: "https://docs.google.com/document/d/1QlAx1fHovxnU83zJlV424jOlFUFR166o/preview" },
+      { label: "Newsletter #25, 3/3/26",  url: "https://docs.google.com/document/d/1qDguDhQpLWDjLX6BiZtQILZLhJtsOKGM/preview" },
+      { label: "Newsletter #24, 2/24/26", url: "https://docs.google.com/document/d/1f82W3ILocZgc9cNU8gkbfZRsqZiYulgl/preview" },
     ],
     adminPassword: "PirateFernwood",
   };
@@ -263,6 +263,9 @@
               .replace(/ - Google Docs$/, "")
               .replace(/ - Google Drive$/, "")
               .replace(/ - Google Sheets$/, "")
+              .replace(/\.docx$/i, "")
+              .replace(/\.doc$/i, "")
+              .replace(/\.pdf$/i, "")
               .trim();
             /* Check if we got a real title (not a security page) */
             if (title && title.length > 0 && title.length < 200
