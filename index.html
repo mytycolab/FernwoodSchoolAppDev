@@ -217,33 +217,75 @@
       return match ? match[1] : null;
     }
 
-    /* Fetch the document title from Google */
+    /* Normalize Google Doc URL to /preview */
+    function normalizeDocUrl(url) {
+      if (!url) return url;
+      var docId = extractDocId(url);
+      if (docId && url.includes("docs.google.com/document")) {
+        return "https://docs.google.com/document/d/" + docId + "/preview";
+      }
+      if (docId && url.includes("drive.google.com")) {
+        return "https://drive.google.com/file/d/" + docId + "/preview";
+      }
+      return url;
+    }
+
+    /* Fetch the document title from Google using multiple methods */
     function fetchDocTitle(url) {
       var docId = extractDocId(url);
       if (!docId) { setNlFetch("error"); setNlTitle(""); return; }
       setNlFetch("fetching");
       setNlTitle("");
-      /* Use Google's oembed-like endpoint to get the title */
-      var fetchUrl = "https://docs.google.com/document/d/" + docId + "/export?format=txt";
-      /* Alternatively, fetch the sharing page which has the title in HTML */
-      var pageUrl = "https://docs.google.com/document/d/" + docId + "/preview";
-      /* Use a CORS proxy to fetch the page and extract the title */
-      fetch("https://corsproxy.io/?" + encodeURIComponent("https://docs.google.com/document/d/" + docId)).then(function(res) {
-        return res.text();
-      }).then(function(html) {
-        var titleMatch = html.match(/<title>([^<]+)<\/title>/i);
-        if (titleMatch && titleMatch[1]) {
-          var title = titleMatch[1].replace(/ - Google Docs$/, "").replace(/ - Google Drive$/, "").trim();
-          setNlTitle(title);
-          setNlFetch("fetched");
-        } else {
-          setNlTitle("");
-          setNlFetch("error");
+
+      /* Method 1: Use Google's oembed endpoint (no CORS proxy needed) */
+      var oembedUrl = "https://www.google.com/accounts/ClientLogin";
+      /* Method: Fetch the /preview page via an alternative proxy */
+      /* Try multiple CORS proxies as fallbacks */
+      var proxies = [
+        "https://api.allorigins.win/raw?url=",
+        "https://api.codetabs.com/v1/proxy?quest=",
+      ];
+
+      function tryProxy(idx) {
+        if (idx >= proxies.length) {
+          /* All proxies failed — ask user to enter title manually */
+          setNlFetch("manual");
+          return;
         }
-      }).catch(function() {
-        setNlTitle("");
-        setNlFetch("error");
-      });
+        var proxyUrl = proxies[idx] + encodeURIComponent("https://docs.google.com/document/d/" + docId);
+        fetch(proxyUrl).then(function(res) {
+          if (!res.ok) throw new Error("HTTP " + res.status);
+          return res.text();
+        }).then(function(html) {
+          var titleMatch = html.match(/<title>([^<]+)<\/title>/i);
+          if (titleMatch && titleMatch[1]) {
+            var title = titleMatch[1]
+              .replace(/ - Google Docs$/, "")
+              .replace(/ - Google Drive$/, "")
+              .replace(/ - Google Sheets$/, "")
+              .trim();
+            /* Check if we got a real title (not a security page) */
+            if (title && title.length > 0 && title.length < 200
+                && !title.toLowerCase().includes("security")
+                && !title.toLowerCase().includes("blocked")
+                && !title.toLowerCase().includes("denied")
+                && !title.toLowerCase().includes("zscaler")
+                && !title.toLowerCase().includes("sign in")) {
+              setNlTitle(title);
+              setNlFetch("fetched");
+            } else {
+              /* Got a blocked/security page, try next proxy */
+              tryProxy(idx + 1);
+            }
+          } else {
+            tryProxy(idx + 1);
+          }
+        }).catch(function() {
+          tryProxy(idx + 1);
+        });
+      }
+
+      tryProxy(0);
     }
 
     /* When URL field changes, auto-fetch title */
@@ -272,10 +314,7 @@
     /* Add new newsletter to Firebase (drops oldest if > 3) */
     function addNewsletter() {
       if (!nlUrl.trim() || !nlTitle) return;
-      var cleanUrl = nlUrl.trim();
-      if (cleanUrl.includes("docs.google.com")) {
-        cleanUrl = cleanUrl.replace(/\/edit.*$/, "/preview").replace(/\/pub.*$/, "/preview");
-      }
+      var cleanUrl = normalizeDocUrl(nlUrl.trim());
       var newNl = { label: nlTitle, url: cleanUrl };
       var updated = [newNl].concat(config.newsletters || []).slice(0, 3);
       db.collection("config").doc("main").update({
@@ -332,7 +371,7 @@
         /* ── SECTION: Add Newsletter ── */
         e("div", { style: S.adminSection },
           e("h3", { style: S.adminSectionTitle }, "\u{1F4F0} Add New Newsletter"),
-          e("p", { style: S.adminHint }, "Paste the Google Doc URL below. The title will be pulled automatically from the document."),
+          e("p", { style: S.adminHint }, "Paste the Google Doc URL below (any format \u2014 /edit, /preview, /pub all work). The title will be pulled automatically."),
           e("input", {
             type: "text", value: nlUrl, placeholder: "Paste Google Doc URL",
             onChange: function(ev) { handleNlUrlChange(ev.target.value); },
@@ -344,12 +383,28 @@
               style: { ...S.adminFetchBtn, opacity: nlUrl.trim() ? 1 : 0.5 },
               disabled: !nlUrl.trim() || nlFetch === "fetching",
             }, nlFetch === "fetching" ? "Fetching title\u2026" : "Fetch Title")),
+
+          /* Success: title found */
           nlFetch === "fetched" && nlTitle && e("div", { style: S.adminTitlePreview },
             e("p", { style: { margin: 0, fontSize: 12, color: "#718096" } }, "Title found:"),
             e("p", { style: { margin: "4px 0 0", fontSize: 15, fontWeight: 700, color: "#1a1a1a" } }, nlTitle)),
+
+          /* Manual fallback: couldn't auto-fetch, let admin type it */
+          nlFetch === "manual" && e("div", { style: { marginTop: 10 } },
+            e("p", { style: { margin: "0 0 8px", fontSize: 13, color: "#b45309" } },
+              "\u26A0\uFE0F Couldn\u2019t fetch the title automatically (your network may be blocking it). Please type the title below:"),
+            e("input", {
+              type: "text", value: nlTitle, placeholder: 'e.g. "Newsletter #27 \u2014 3/17/26"',
+              onChange: function(ev) { setNlTitle(ev.target.value); },
+              style: S.adminInput,
+            })),
+
+          /* Error */
           nlFetch === "error" && e("p", { style: { margin: "8px 0 0", fontSize: 13, color: "#ef4444" } },
-            "Could not fetch title. Make sure the document is shared publicly."),
-          nlFetch === "fetched" && nlTitle && e("button", {
+            "Could not find a Google Doc ID in that URL. Please check the link."),
+
+          /* Add button — shown for both fetched and manual states */
+          (nlFetch === "fetched" || nlFetch === "manual") && nlTitle && e("button", {
             onClick: addNewsletter,
             style: S.adminSaveBtn,
           }, "Add Newsletter")),
